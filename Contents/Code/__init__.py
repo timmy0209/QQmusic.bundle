@@ -11,14 +11,16 @@ import config
 from collections import defaultdict
 from io import open
 
-ARTIST_SEARCH_URL_QQ = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&t=9&w='
+ARTIST_SEARCH_URL_QQ_OLD = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?format=json&t=9&w='
+ARTIST_SEARCH_URL_QQ = 'https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?_=1667523427640&key='
 ARTIST_ALBUM_URL_QQ = 'http://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_album.fcg?num=200&singermid='
 ALBUM_INFO_URL_QQ = 'https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg?albummid='
 ALBUM_SONG_URL_QQ = 'https://api.qq.jsososo.com/album/songs?albummid='
 ARTIST_URL_QQ = 'https://c.y.qq.com/v8/fcg-bin//fcg_v8_singer_detail_cp.fcg?format=json&singermid='
 ARTIST_HOTSONG_QQ = 'https://api.qq.jsososo.com/singer/songs?page=1&num=20&singermid='
 ARTIST_SIMILAR_QQ = 'http://c.y.qq.com/v8/fcg-bin/fcg_v8_simsinger.fcg?start=0&num=10&utf8=1&singer_mid='
-ARTIST_ALBUM_SEARCH_URL_QQ = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n=10&format=json&t=8&w='
+ARTIST_ALBUM_SEARCH_URL_QQ_OLD = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n=10&format=json&t=8&w='
+ARTIST_ALBUM_SEARCH_URL_QQ = 'https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?_=1667523427640&key='
 LYRIC_URL_QQ = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?format=json&nobase64=1&songmid='
 SINGERPIC_QQ = 'http://y.gtimg.cn/music/photo_new/T001R150x150M000%s.jpg'
 ALBUMPIC_QQ = 'http://y.gtimg.cn/music/photo_new/T002R300x300M000%s.jpg'
@@ -198,12 +200,12 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     # Need to coerce this into a utf-8 string so String.Quote() escapes the right characters.
     #id = String.Quote(artist['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
     Log("第"+ str(i+1) +"个搜索结果")
-    id = str(artist['singerMID'])
+    id = str(artist['mid'])
     Log("歌手ID: " + id)
     # Search returns ordered results, but no numeric score, so we approximate one with Levenshtein ratio.
     Log("搜索内容： " + media_artist.lower())
-    dist = int(ARTIST_MAX_DIST_PENALTY - ARTIST_MAX_DIST_PENALTY * LevenshteinRatio(artist['singerName'].lower(), media_artist.lower()))
-    Log("开始匹配结果： " + artist['singerName'])
+    dist = int(ARTIST_MAX_DIST_PENALTY - ARTIST_MAX_DIST_PENALTY * LevenshteinRatio(artist['name'].lower(), media_artist.lower()))
+    Log("开始匹配结果： " + artist['name'])
     Log("歌手中文名差异:" + str(dist))
     try:
       dist_en = int(ARTIST_MAX_DIST_PENALTY - ARTIST_MAX_DIST_PENALTY * LevenshteinRatio((artist['alias'][0]), media_artist.lower()))
@@ -215,7 +217,7 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
       pass
     # If the match is exact, bonus.
     Log("最终dist" + str(dist))
-    if artist['singerName'].lower() == media_artist.lower():
+    if artist['name'].lower() == media_artist.lower():
       dist = dist - 1
     # Fetching albums in order to apply bonus is expensive, so only do it for the top N artist matches.
     if i < ARTIST_ALBUMS_MATCH_LIMIT:
@@ -228,7 +230,7 @@ def score_artists(artists, media_artist, media_albums, lang, artist_results):
     # Adjust the score.
     score = ARTIST_INITIAL_SCORE + bonus - dist
     Log("最终得分为: " + str(score))    
-    name = artist['singerName']
+    name = artist['name']
 
     if score >= ARTIST_MATCH_MIN_SCORE:
       artist_results.append(MetadataSearchResult(id=id, name=name, lang=lang, score=score))
@@ -476,7 +478,7 @@ class QQmusicAgent(Agent.Album):
     #if  found_good_match == False:
       Log('没有匹配到合适专辑 开始搜索专辑')
       albums = self.score_albums(media, lang, SearchAlbums(media.title.lower(), ALBUM_MATCH_LIMIT), manual=manual) + albums
-      
+
       # If we find a good match for the exact search, stop looking.
       if albums and albums[0]['score'] >= ALBUM_MATCH_GOOD_SCORE:
         found_good_match = True
@@ -548,6 +550,33 @@ class QQmusicAgent(Agent.Album):
         Log("匹配分数：" + str(score))
         res.append({'id':id, 'name':name, 'lang':lang, 'score':score})
       
+      except:
+        Log('Error scoring album.')
+      try:
+        name = album['name']
+        Log("本地专辑名：" + media.title)
+        Log("匹配专辑名：" + name)
+        # id = media.parent_metadata.id + '/' + String.Quote(album['name'].decode('utf-8').encode('utf-8')).replace(' ','+')
+        id = media.parent_metadata.id + '/' + str(album['mid'])
+        # Log("歌手+专辑 id组合" + id)
+        dist = Util.LevenshteinDistance(name.lower(), media.title.lower()) * ALBUM_NAME_DIST_COEFFICIENT  # 专辑名称差
+        Log("专辑相似差：" + str(dist))
+        artist_dist = 100
+        # Freeform album searches will come back with wacky artists.  If they're not close, penalize heavily, skipping them.
+
+        Log("专辑艺术家：" + album['singer'])
+        if Util.LevenshteinDistance(album['singer'].lower(),String.Unquote(media.parent_metadata.title).lower()) < artist_dist:  # 艺术家差
+            artist_dist = Util.LevenshteinDistance(album['singer'].lower(), String.Unquote(media.parent_metadata.title).lower())
+        Log("艺术家差：" + str(artist_dist))
+        if artist_dist > ALBUM_TRACK_BONUS_MAX_ARTIST_DSIT:
+          artist_dist = 1000
+          Log('艺术家匹配错误 ' + album['singer'])
+
+        # Apply album and artist penalties and append to temp results list.
+        score = ALBUM_INITIAL_SCORE - dist - artist_dist
+        Log("匹配分数：" + str(score))
+        res.append({'id': id, 'name': name, 'lang': lang, 'score': score})
+
       except:
         Log('Error scoring album.')
 
@@ -800,7 +829,7 @@ def SearchArtists(artist, limit=10):
   url = ARTIST_SEARCH_URL_QQ + String.Quote(a)
   try: 
     response = GetJSON(url)
-    num = int(response['data']['singer']['curnum'])
+    num = int(response['data']['singer']['count'])
   except:
     Log('Error retrieving artist search results.')
     
@@ -809,7 +838,7 @@ def SearchArtists(artist, limit=10):
   for i in range(lim):
     try:
       artist_results = response['data']['singer']
-      artists = artists + Listify(artist_results['list'])
+      artists = artists + Listify(artist_results['itemlist'])
     except:
       Log('Error retrieving artist search results.')
   # Since LFM has lots of garbage artists that match garbage inputs, we'll only consider ones that have
@@ -843,7 +872,7 @@ def SearchAlbums(album, limit=10, legacy=False):
       return albums
     else:
       album_results = response['data']['album']
-      albums = Listify(album_results['list'])
+      albums = Listify(album_results['itemlist'])
   except:
     Log('Error retrieving album search results.')
 
