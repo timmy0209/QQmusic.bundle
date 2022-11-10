@@ -292,7 +292,7 @@ def get_album_bonus(media_albums, artist_id):
 class QQmusicAgent(Agent.Artist):
   name = 'qqmusic'
   languages = [Locale.Language.Chinese]
-
+  accepts_from = ['com.plexapp.agents.localmedia','com.plexapp.agents.lyricfind']
   def search(self, results, media, lang, manual):
     global proxy
     if Prefs['ifproxy'] :
